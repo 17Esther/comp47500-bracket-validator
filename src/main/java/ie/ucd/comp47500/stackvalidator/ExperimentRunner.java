@@ -21,13 +21,27 @@ public final class ExperimentRunner {
         int[] sizes = {1_000, 10_000, 100_000, 1_000_000};
         int[] depths = {8, 32, 128, 512};
         int runs = 50;
+        runExperimentBlock("VALID-HEAVY DATASET", 0.00, sizes, depths, runs);
+        runExperimentBlock("EARLY-FAIL DATASET", 0.10, sizes, depths, runs);
+    }
+
+    private void runExperimentBlock(
+            String label,
+            double invalidRate,
+            int[] sizes,
+            int[] depths,
+            int runs
+    ) {
         List<ExperimentPoint> sizePoints = new ArrayList<>();
         List<ExperimentPoint> depthPoints = new ArrayList<>();
+
+        System.out.println();
+        System.out.printf("=== %s (invalidRate=%.2f) ===%n", label, invalidRate);
 
         System.out.println("Experiment: runtime scaling with input size");
         System.out.println("columns: size, depthLimit, runs, avgMicros, validRate, avgMaxDepth");
         for (int size : sizes) {
-            ExperimentStats stats = benchmark(size, 64, 0.10, runs);
+            ExperimentStats stats = benchmark(size, 64, invalidRate, runs);
             printRow(size, 64, runs, stats);
             sizePoints.add(new ExperimentPoint(size, stats));
         }
@@ -36,18 +50,18 @@ public final class ExperimentRunner {
         System.out.println("Experiment: runtime scaling with maximum nesting depth");
         System.out.println("columns: size, depthLimit, runs, avgMicros, validRate, avgMaxDepth");
         for (int depth : depths) {
-            ExperimentStats stats = benchmark(200_000, depth, 0.10, runs);
+            ExperimentStats stats = benchmark(200_000, depth, invalidRate, runs);
             printRow(200_000, depth, runs, stats);
             depthPoints.add(new ExperimentPoint(depth, stats));
         }
 
         printAsciiChart(
-                "Chart: avg runtime vs input size",
+                String.format("Chart: avg runtime vs input size (invalidRate=%.2f)", invalidRate),
                 "size",
                 sizePoints
         );
         printAsciiChart(
-                "Chart: avg runtime vs depth limit",
+                String.format("Chart: avg runtime vs depth limit (invalidRate=%.2f)", invalidRate),
                 "depth",
                 depthPoints
         );
@@ -137,9 +151,18 @@ public final class ExperimentRunner {
         ArrayCharStack open = new ArrayCharStack(Math.max(16, maxDepth));
 
         while (sb.length() < length) {
-            boolean forceClose = !open.isEmpty() && (open.size() >= maxDepth || random.nextBoolean());
+            int remaining = length - sb.length();
+            // We must leave enough slots to close all currently-open brackets.
+            boolean mustCloseForBalance = !open.isEmpty() && open.size() == remaining;
+            boolean forceCloseByDepth = !open.isEmpty() && open.size() >= maxDepth;
+            // To open one more bracket now, we need at least one slot for this char and
+            // (open.size() + 1) slots later to close all outstanding brackets.
+            boolean canOpen = remaining >= open.size() + 2 && open.size() < maxDepth;
 
-            if (forceClose) {
+            boolean chooseClose = !open.isEmpty()
+                    && (mustCloseForBalance || forceCloseByDepth || !canOpen || random.nextBoolean());
+
+            if (chooseClose) {
                 char opening = open.pop();
                 char closing = matchingClosing(opening);
                 if (random.nextDouble() < invalidRate) {
@@ -151,10 +174,6 @@ public final class ExperimentRunner {
                 open.push(opening);
                 sb.append(opening);
             }
-        }
-
-        while (sb.length() < length && !open.isEmpty()) {
-            sb.append(matchingClosing(open.pop()));
         }
         return sb.toString();
     }
