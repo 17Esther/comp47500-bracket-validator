@@ -13,7 +13,7 @@ Non-bracket characters can be ignored (editor-like behavior).
   - `ValidationResult.java`: immutable result record (valid/invalid + metrics)
   - `ExperimentRunner.java`: benchmark experiments + ASCII bar charts
   - `Main.java`: CLI entry point
-- `docs/uml.puml`: UML class diagram (PlantUML)
+
 
 ## Build & Run
 ### Requirements
